@@ -97,7 +97,7 @@ namespace Artisan.RawInformation
         public unsafe static bool ExtractMateriaTask(bool option)
         {
             if (!CharacterInfo.MateriaExtractionUnlocked()) return true;
-
+            if (CharacterOther.GetInventoryFreeSlotCount() == 0) return true;
 
             if (option)
             {

@@ -14,7 +14,7 @@ using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Linq;
 using System.Numerics;
@@ -50,10 +50,10 @@ namespace Artisan.Autocraft
             var repairResources = Svc.Data.Excel.GetSheet<ItemRepairResource>();
             foreach (var dm in repairResources)
             {
-                if (dm.Item.Row < darkMatterID)
+                if (dm.Item.RowId < darkMatterID)
                     continue;
 
-                if (InventoryManager.Instance()->GetInventoryItemCount(dm.Item.Row) > 0)
+                if (InventoryManager.Instance()->GetInventoryItemCount(dm.Item.RowId) > 0)
                     return true;
             }
             return false;
@@ -118,12 +118,12 @@ namespace Artisan.Autocraft
         {
             var item = LuminaSheets.ItemSheet[ItemId];
 
-            if (item.ClassJobRepair.Row > 0)
+            if (item.ClassJobRepair.RowId > 0)
             {
-                var actualJob = (Job)(item.ClassJobRepair.Row);
+                var actualJob = (Job)(item.ClassJobRepair.RowId);
                 var repairItem = item.ItemRepair.Value.Item;
 
-                if (!HasDarkMatterOrBetter(repairItem.Row))
+                if (!HasDarkMatterOrBetter(repairItem.RowId))
                     return false;
 
                 var jobLevel = CharacterInfo.JobLevel(actualJob);
@@ -141,10 +141,9 @@ namespace Artisan.Autocraft
             {
                 foreach (var obj in Svc.Objects.Where(x => x.ObjectKind == Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc))
                 {
-                    var enpcsheet = Svc.Data.Excel.GetSheet<ENpcBase>().GetRow(obj.DataId);
-                    if (enpcsheet != null)
+                    if (Svc.Data.Excel.GetSheet<ENpcBase>().TryGetRow(obj.DataId, out var enpcsheet))
                     {
-                        if (enpcsheet.ENpcData.Any(x => x == 720915))
+                        if (enpcsheet.ENpcData.Any(x => x.RowId == 720915))
                         {
                             var npcDistance = Vector3.Distance(obj.Position, Svc.ClientState.LocalPlayer.Position);
                             if (npcDistance > 7)
@@ -173,7 +172,7 @@ namespace Artisan.Autocraft
                 TargetSystem.Instance()->OpenObjectInteraction(npc.Struct());
                 if (TryGetAddonByName<AddonSelectIconString>("SelectIconString", out var addonSelectIconString))
                 {
-                    var index = GenericHelpers.IndexOf(Svc.Data.Excel.GetSheet<ENpcBase>().GetRow(npc.DataId).ENpcData, x => x == 720915);
+                    var index = GenericHelpers.IndexOf(Svc.Data.Excel.GetSheet<ENpcBase>().GetRow(npc.DataId).ENpcData, x => x.RowId == 720915);
                     Callback.Fire(&addonSelectIconString->AtkUnitBase, true, index);
                 }
 

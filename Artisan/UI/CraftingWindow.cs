@@ -81,7 +81,7 @@ namespace Artisan.UI
                 P.PluginUi.IsOpen = true;
             }
 
-            if (Crafting.CurCraft != null && !Crafting.CurCraft.CraftExpert && Crafting.CurRecipe?.SecretRecipeBook.Row > 0 && Crafting.CurCraft?.CraftLevel == Crafting.CurCraft?.StatLevel && !CraftingProcessor.ActiveSolver.IsType<MacroSolver>())
+            if (Crafting.CurCraft != null && !Crafting.CurCraft.CraftExpert && Crafting.CurRecipe?.SecretRecipeBook.RowId > 0 && Crafting.CurCraft?.CraftLevel == Crafting.CurCraft?.StatLevel && !CraftingProcessor.ActiveSolver.IsType<MacroSolver>())
             {
                 ImGui.Dummy(new System.Numerics.Vector2(12f));
                 ImGuiEx.TextWrapped(ImGuiColors.DalamudYellow, "This is a current level master recipe. Your success rate may vary so it is recommended to use an Artisan macro or manually solve this.");
@@ -167,7 +167,7 @@ namespace Artisan.UI
             }
         }
 
-        private void OnSolverStarted(Lumina.Excel.GeneratedSheets.Recipe recipe, SolverRef solver, CraftState craft, StepState initialStep)
+        private void OnSolverStarted(Lumina.Excel.Sheets.Recipe recipe, SolverRef solver, CraftState craft, StepState initialStep)
         {
             if (P.Config.AutoMode && solver)
             {
@@ -177,19 +177,19 @@ namespace Artisan.UI
             }
         }
 
-        private void OnSolverFailed(Lumina.Excel.GeneratedSheets.Recipe recipe, string reason)
+        private void OnSolverFailed(Lumina.Excel.Sheets.Recipe recipe, string reason)
         {
             var text = $"{reason}. Artisan will not continue.";
             Svc.Toasts.ShowError(text);
             DuoLog.Error(text);
         }
 
-        private void OnSolverFinished(Lumina.Excel.GeneratedSheets.Recipe recipe, SolverRef solver, CraftState craft, StepState finalStep)
+        private void OnSolverFinished(Lumina.Excel.Sheets.Recipe recipe, SolverRef solver, CraftState craft, StepState finalStep)
         {
             _estimatedCraftEnd = default;
         }
 
-        private void OnRecommendationReady(Lumina.Excel.GeneratedSheets.Recipe recipe, SolverRef solver, CraftState craft, StepState step, Solver.Recommendation recommendation)
+        private void OnRecommendationReady(Lumina.Excel.Sheets.Recipe recipe, SolverRef solver, CraftState craft, StepState step, Solver.Recommendation recommendation)
         {
             Svc.Log.Debug($"{step.TrainedPerfectionAvailable}");
             if (!Simulator.CanUseAction(craft, step, recommendation.Action))

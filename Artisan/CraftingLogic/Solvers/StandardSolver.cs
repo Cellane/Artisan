@@ -1,6 +1,4 @@
-﻿using ECommons.DalamudServices;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Condition = Artisan.CraftingLogic.CraftData.Condition;
 using Skills = Artisan.RawInformation.Character.Skills;
 
@@ -192,6 +190,8 @@ namespace Artisan.CraftingLogic.Solvers
                 if (Simulator.CanUseAction(craft, step, Skills.BasicTouch) && CalculateNewQuality(craft, step, Skills.BasicTouch) >= craft.CraftQualityMax && step.Index == 1)
                     return new(Skills.BasicTouch);
 
+                if (Simulator.CanUseAction(craft, step, Skills.Manipulation) && step.ManipulationLeft == 0 && !_manipulationUsed) return new(Skills.Manipulation);
+
                 if (step.Progress < craft.CraftProgress - 1 && (!_qualityStarted || !Simulator.CanUseAction(craft, step, Skills.FinalAppraisal)))
                 {
                     bool canUseAct = step.Progress + Simulator.BaseProgress(craft) < craft.CraftProgress;
@@ -199,7 +199,6 @@ namespace Artisan.CraftingLogic.Solvers
                     {
                         bool shouldUseVeneration = CheckIfVenerationIsWorth(craft, step, act);
 
-                        if (Simulator.CanUseAction(craft, step, Skills.Manipulation) && step.ManipulationLeft == 0 && !_manipulationUsed) return new(Skills.Manipulation);
                         if (Simulator.CanUseAction(craft, step, Skills.Veneration) && step.VenerationLeft == 0 && shouldUseVeneration) return new(Skills.Veneration);
                         if (Simulator.CanUseAction(craft, step, Skills.WasteNot2) && step.WasteNotLeft == 0 && !_wasteNotUsed) return new(Skills.WasteNot2);
                         if (Simulator.CanUseAction(craft, step, Skills.WasteNot) && step.WasteNotLeft == 0 && !_wasteNotUsed) return new(Skills.WasteNot);

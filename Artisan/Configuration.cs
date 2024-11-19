@@ -40,9 +40,9 @@ namespace Artisan
         public bool UseSimulatedStartingQuality = false;
         public bool DisableHighlightedAction = false;
 
-        public CraftingLogic.Solvers.ExpertSolverSettings ExpertSolverConfig = new();
-        public CraftingLogic.Solvers.MacroSolverSettings MacroSolverConfig = new();
-        public CraftingLogic.Solvers.ScriptSolverSettings ScriptSolverConfig = new();
+        public ExpertSolverSettings ExpertSolverConfig = new();
+        public MacroSolverSettings MacroSolverConfig = new();
+        public ScriptSolverSettings ScriptSolverConfig = new();
 
         public Dictionary<uint, RecipeConfig> RecipeConfigs = new();
 
@@ -146,6 +146,8 @@ namespace Artisan
         public bool DisableSimulatorActionTooltips = false;
 
         public bool ReplaceSearch = true;
+        public bool UsingDiscordHooks;
+        public string? DiscordWebhookUrl;
 
         public void Save()
         {

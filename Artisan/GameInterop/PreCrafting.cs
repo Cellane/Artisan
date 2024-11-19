@@ -15,7 +15,7 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using static ECommons.GenericHelpers;
@@ -106,38 +106,31 @@ public unsafe static class PreCrafting
     {
         try
         {
-            Svc.Log.Debug($"Starting {type} crafting: {recipe.RowId} '{recipe.ItemResult.Value?.Name}'");
+            Svc.Log.Debug($"Starting {type} crafting: {recipe.RowId} '{recipe.ItemResult.Value.Name}'");
 
-            var requiredClass = Job.CRP + recipe.CraftType.Row;
+            var requiredClass = Job.CRP + recipe.CraftType.RowId;
             var config = P.Config.RecipeConfigs.GetValueOrDefault(recipe.RowId);
 
             bool hasIngredients = GetNumberCraftable(recipe) > 0;
             bool needClassChange = requiredClass != CharacterInfo.JobID;
-            bool needEquipItem = recipe.ItemRequired.Row > 0 && (needClassChange || !IsItemEquipped(recipe.ItemRequired.Row));
-            // TODO: repair & extract materia
-            bool needConsumables = (type == CraftType.Normal || (type == CraftType.Trial && P.Config.UseConsumablesTrial) || (type == CraftType.Quick && P.Config.UseConsumablesQuickSynth)) && (!ConsumableChecker.IsFooded(config) || !ConsumableChecker.IsPotted(config) || !ConsumableChecker.IsManualled(config) || !ConsumableChecker.IsSquadronManualled(config));
-            bool hasConsumables = config != default ?
-                (ConsumableChecker.HasItem(config.RequiredFood, config.RequiredFoodHQ) || ConsumableChecker.IsFooded(config)) &&
-                (ConsumableChecker.HasItem(config.RequiredPotion, config.RequiredPotionHQ) || ConsumableChecker.IsPotted(config)) &&
-                (ConsumableChecker.HasItem(config.RequiredManual, false) || ConsumableChecker.IsManualled(config)) &&
-                (ConsumableChecker.HasItem(config.RequiredSquadronManual, false) || ConsumableChecker.IsSquadronManualled(config)) : true;
+            bool needEquipItem = recipe.ItemRequired.RowId > 0 && (needClassChange || !IsItemEquipped(recipe.ItemRequired.RowId));
+            bool needConsumables = NeedsConsumablesCheck(type, config);
+            bool hasConsumables = HasConsumablesCheck(config);
 
             // handle errors when we're forbidden from rectifying them automatically
             if (P.Config.DontEquipItems && needClassChange)
             {
-                DuoLog.Error($"Can't craft {recipe.ItemResult.Value?.Name}: wrong class, {requiredClass} needed");
+                DuoLog.Error($"Can't craft {recipe.ItemResult.Value.Name}: wrong class, {requiredClass} needed");
                 return;
             }
             if (P.Config.DontEquipItems && needEquipItem)
             {
-                DuoLog.Error($"Can't craft {recipe.ItemResult.Value?.Name}: required item {recipe.ItemRequired.Value?.Name} not equipped");
+                DuoLog.Error($"Can't craft {recipe.ItemResult.Value.Name}: required item {recipe.ItemRequired.Value.Name} not equipped");
                 return;
             }
             if (P.Config.AbortIfNoFoodPot && needConsumables && !hasConsumables)
             {
-                List<string> missingConsumables = MissingConsumables(config);
-
-                DuoLog.Error($"Can't craft {recipe.ItemResult.Value?.Name}: required consumables not up and missing {string.Join(", ", missingConsumables)}");
+                MissingConsumablesMessage(recipe, config);
                 return;
             }
 
@@ -158,16 +151,22 @@ public unsafe static class PreCrafting
             {
                 List<string> missingIngredients = MissingIngredients(recipe);
 
-                DuoLog.Error($"Not all ingredients for {recipe.ItemResult.Value?.Name} found.\r\nMissing: {string.Join(", ", missingIngredients)}");
+                DuoLog.Error($"Not all ingredients for {recipe.ItemResult.Value.Name} found.\r\nMissing: {string.Join(", ", missingIngredients)}");
                 return;
             }
 
             if (needEquipItem)
             {
                 equipAttemptLoops = 0;
-                Tasks.Add((() => TaskEquipItem(recipe.ItemRequired.Row), default));
+                Tasks.Add((() => TaskEquipItem(recipe.ItemRequired.RowId), default));
             }
-            if (needConsumables)
+
+            bool needFood = config != default && ConsumableChecker.HasItem(config.RequiredFood, config.RequiredFoodHQ) && !ConsumableChecker.IsFooded(config);
+            bool needPot = config != default && ConsumableChecker.HasItem(config.RequiredPotion, config.RequiredPotionHQ) && !ConsumableChecker.IsPotted(config);
+            bool needManual = config != default && ConsumableChecker.HasItem(config.RequiredManual, false) && !ConsumableChecker.IsManualled(config);
+            bool needSquadronManual = config != default && ConsumableChecker.HasItem(config.RequiredSquadronManual, false) && !ConsumableChecker.IsSquadronManualled(config);
+
+            if (needFood || needPot || needManual || needSquadronManual)
                 Tasks.Add((() => TaskUseConsumables(config, type), default));
             Tasks.Add((() => TaskSelectRecipe(recipe), TimeSpan.FromMilliseconds(500)));
             timeWasteLoops = 1;
@@ -182,19 +181,41 @@ public unsafe static class PreCrafting
         }
     }
 
+    internal static void MissingConsumablesMessage(Recipe recipe, RecipeConfig? config)
+    {
+        List<string> missingConsumables = MissingConsumables(config);
+
+        DuoLog.Error($"Can't craft {recipe.ItemResult.Value.Name}: required consumables not up and missing {string.Join(", ", missingConsumables)}");
+    }
+
+    internal static bool NeedsConsumablesCheck(CraftType type, RecipeConfig? config)
+    {
+        // TODO: repair & extract materia
+        return (type == CraftType.Normal || (type == CraftType.Trial && P.Config.UseConsumablesTrial) || (type == CraftType.Quick && P.Config.UseConsumablesQuickSynth)) && (!ConsumableChecker.IsFooded(config) || !ConsumableChecker.IsPotted(config) || !ConsumableChecker.IsManualled(config) || !ConsumableChecker.IsSquadronManualled(config));
+    }
+
+    internal static bool HasConsumablesCheck(RecipeConfig? config)
+    {
+        return config != default ?
+            (ConsumableChecker.HasItem(config.RequiredFood, config.RequiredFoodHQ) || ConsumableChecker.IsFooded(config)) &&
+            (ConsumableChecker.HasItem(config.RequiredPotion, config.RequiredPotionHQ) || ConsumableChecker.IsPotted(config)) &&
+            (ConsumableChecker.HasItem(config.RequiredManual, false) || ConsumableChecker.IsManualled(config)) &&
+            (ConsumableChecker.HasItem(config.RequiredSquadronManual, false) || ConsumableChecker.IsSquadronManualled(config)) : true;
+    }
+
     public static List<string> MissingConsumables(RecipeConfig? config)
     {
         List<string> missingConsumables = new List<string>();
-        if (!ConsumableChecker.HasItem(config.RequiredFood, config.RequiredFoodHQ))
-            missingConsumables.Add(config.RequiredFood.NameOfItem());
+        if (!ConsumableChecker.HasItem(config.RequiredFood, config.RequiredFoodHQ) && !ConsumableChecker.IsFooded(config))
+            missingConsumables.Add($"{(config.RequiredFoodHQ ? " " : "")}{config.RequiredFood.NameOfItem()}");
 
-        if (!ConsumableChecker.HasItem(config.RequiredPotion, config.RequiredPotionHQ))
-            missingConsumables.Add(config.RequiredPotion.NameOfItem());
+        if (!ConsumableChecker.HasItem(config.RequiredPotion, config.RequiredPotionHQ) && !ConsumableChecker.IsPotted(config))
+            missingConsumables.Add($"{(config.RequiredPotionHQ ? " " : "")}{config.RequiredPotion.NameOfItem()}");
 
-        if (!ConsumableChecker.HasItem(config.RequiredManual, false))
+        if (!ConsumableChecker.HasItem(config.RequiredManual, false) && !ConsumableChecker.IsManualled(config))
             missingConsumables.Add(config.RequiredManual.NameOfItem());
 
-        if (!ConsumableChecker.HasItem(config.RequiredSquadronManual, false))
+        if (!ConsumableChecker.HasItem(config.RequiredSquadronManual, false) && !ConsumableChecker.IsSquadronManualled(config))
             missingConsumables.Add(config.RequiredSquadronManual.NameOfItem());
         return missingConsumables;
     }
@@ -202,13 +223,13 @@ public unsafe static class PreCrafting
     public static List<string> MissingIngredients(Recipe recipe)
     {
         List<string> missingIngredients = new();
-        foreach (var ing in recipe.UnkData5)
+        foreach (var ing in recipe.Ingredients())
         {
-            if (ing.AmountIngredient > 0)
+            if (ing.Amount > 0)
             {
-                if (CraftingListUI.NumberOfIngredient((uint)ing.ItemIngredient) < ing.AmountIngredient)
+                if (CraftingListUI.NumberOfIngredient(ing.Item.RowId) < ing.Amount)
                 {
-                    missingIngredients.Add(((uint)ing.ItemIngredient).NameOfItem());
+                    missingIngredients.Add(ing.Item.RowId.NameOfItem());
                 }
             }
         }
@@ -266,8 +287,11 @@ public unsafe static class PreCrafting
         if (job == CharacterInfo.JobID)
             return TaskResult.Done;
 
-        if (equipGearsetLoops > 0)
-            return TaskResult.Retry;
+        if (equipGearsetLoops >= 5)
+        {
+            DuoLog.Error("Unable to switch gearsets.");
+            return TaskResult.Abort;
+        }
 
         var gearsets = RaptureGearsetModule.Instance();
         foreach (ref var gs in gearsets->Entries)
@@ -479,7 +503,7 @@ public unsafe static class PreCrafting
             var re = Operations.GetSelectedRecipeEntry();
             var recipe = re != null ? Svc.Data.GetExcelSheet<Recipe>()?.GetRow(re->RecipeId) : null;
             if (recipe != null)
-                StartCrafting(recipe, eventParam is 13 ? CraftType.Normal : eventParam is 14 ? CraftType.Quick : CraftType.Trial);
+                StartCrafting(recipe.Value, eventParam is 13 ? CraftType.Normal : eventParam is 14 ? CraftType.Quick : CraftType.Trial);
             else
                 DuoLog.Error($"Somehow recipe is null. Please report this on the Discord.");
         }

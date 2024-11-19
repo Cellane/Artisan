@@ -18,7 +18,7 @@ using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -32,6 +32,7 @@ namespace Artisan.UI
         internal static int SelRecId = 0;
         internal static bool Debug = false;
         public static int DebugValue = 1;
+        static int NQMats, HQMats = 0;
 
         internal static void Draw()
         {
@@ -142,7 +143,7 @@ namespace Artisan.UI
                     ImGui.Text($"Current Quality: {Crafting.CurStep.Quality}");
                     ImGui.Text($"Max Quality: {Crafting.CurCraft.CraftQualityMax}");
                     ImGui.Text($"Quality Percent: {Calculations.GetHQChance(Crafting.CurStep.Quality * 100.0 / Crafting.CurCraft.CraftQualityMax)}");
-                    ImGui.Text($"Item name: {Crafting.CurRecipe?.ItemResult.Value?.Name}");
+                    ImGui.Text($"Item name: {Crafting.CurRecipe?.ItemResult.Value.Name}");
                     ImGui.Text($"Current Condition: {Crafting.CurStep.Condition}");
                     ImGui.Text($"Current Step: {Crafting.CurStep.Index}");
                     ImGui.Text($"Quick Synth: {Crafting.QuickSynthState.Cur} / {Crafting.QuickSynthState.Max}");
@@ -231,18 +232,15 @@ namespace Artisan.UI
                     ImGui.Text($"ATools Installed: {RetainerInfo.AToolsInstalled}");
                     ImGui.Text($"ATools Enabled: {RetainerInfo.AToolsEnabled}");
                     ImGui.Text($"ATools Allowed: {RetainerInfo.ATools}");
-                } 
+                }
 
                 if (ImGui.CollapsingHeader("Collectables"))
                 {
-                    foreach (var item in LuminaSheets.ItemSheet.Values.Where(x => x.IsCollectable).OrderBy(x => x.LevelItem.Row))
+                    foreach (var item in LuminaSheets.ItemSheet.Values.Where(x => x.IsCollectable).OrderBy(x => x.LevelItem.RowId))
                     {
-                        if (Svc.Data.GetExcelSheet<CollectablesShopItem>().TryGetFirst(x => x.Item.Row == item.RowId, out var collectibleSheetItem))
+                        if (Svc.Data.GetSubrowExcelSheet<CollectablesShopItem>().SelectMany(x => x).TryGetFirst(x => x.Item.RowId == item.RowId, out var collectibleSheetItem))
                         {
-                            if (collectibleSheetItem != null)
-                            {
-                                ImGui.Text($"{item.Name} - {collectibleSheetItem.CollectablesShopRewardScrip.Value.LowReward}");
-                            }
+                            ImGui.Text($"{item.Name} - {collectibleSheetItem.CollectablesShopRewardScrip.Value.LowReward}");
                         }
                     }
                 }
@@ -360,12 +358,6 @@ namespace Artisan.UI
             {
                 TeleportToGCTown();
             }
-
-            ImGui.Text($"{Loot.Instance()->UnkObjectId} {Loot.Instance()->UnkObjectId2}");
-            foreach (var i in Loot.Instance()->Items)
-            {
-                ImGui.Text($"{i.RollState} {i.RollValue} {i.RollResult} {i.LootMode} {i.ItemCount} {i.Time}");
-            }
         }
 
         public unsafe static void TeleportToGCTown()
@@ -395,8 +387,9 @@ namespace Artisan.UI
 
         private static void DrawRecipeEntry(string tag, RecipeNoteRecipeEntry* e)
         {
+            Svc.Log.Debug($"{e->RecipeId}");
             var recipe = Svc.Data.GetExcelSheet<Recipe>()?.GetRow(e->RecipeId);
-            using var n = ImRaii.TreeNode($"{tag}: {e->RecipeId} '{recipe?.ItemResult.Value?.Name}'###{tag}");
+            using var n = ImRaii.TreeNode($"{tag}: {e->RecipeId} '{recipe?.ItemResult.Value.Name}'###{tag}");
             if (!n)
                 return;
 
@@ -405,16 +398,36 @@ namespace Artisan.UI
             {
                 if (ing.NumTotal != 0)
                 {
-                    var item = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.Item>()?.GetRow(ing.ItemId);
-                    using var n1 = ImRaii.TreeNode($"Ingredient {i}: {ing.ItemId} '{item?.Name}' (ilvl={item?.LevelItem.Row}, hq={item?.CanBeHq}), max={ing.NumTotal}, nq={ing.NumAssignedNQ}/{ing.NumAvailableNQ}, hq={ing.NumAssignedHQ}/{ing.NumAvailableHQ}", ImGuiTreeNodeFlags.Leaf);
+                    var item = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Item>()?.GetRow(ing.ItemId);
+                    using var n1 = ImRaii.TreeNode($"Ingredient {i}: {ing.ItemId} '{item?.Name}' (ilvl={item?.LevelItem.RowId}, hq={item?.CanBeHq}), max={ing.NumTotal}, nq={ing.NumAssignedNQ}/{ing.NumAvailableNQ}, hq={ing.NumAssignedHQ}/{ing.NumAvailableHQ}###ingy{ing.ItemId}");
+                    if (n1)
+                    {
+                        ImGui.InputInt("NQ Mats", ref NQMats);
+                        ImGui.InputInt("HQ Mats", ref HQMats);
+
+                        if (ImGui.Button("Set Specific"))
+                        {
+                            ing.SetSpecific(NQMats, HQMats);
+                        }
+
+                        if (ImGui.Button("Set Max HQ"))
+                        {
+                            ing.SetMaxHQ();
+                        }
+                        ImGui.SameLine();
+                        if (ImGui.Button("Set Max NQ"))
+                        {
+                            ing.SetMaxNQ();
+                        }
+                    }
                 }
                 i++;
             }
 
             if (recipe != null)
             {
-                var startingQuality = Calculations.GetStartingQuality(recipe, e->GetAssignedHQIngredients());
-                using var n2 = ImRaii.TreeNode($"Starting quality: {startingQuality}/{Calculations.RecipeMaxQuality(recipe)}", ImGuiTreeNodeFlags.Leaf);
+                var startingQuality = Calculations.GetStartingQuality(recipe.Value, e->GetAssignedHQIngredients());
+                using var n2 = ImRaii.TreeNode($"Starting quality: {startingQuality}/{Calculations.RecipeMaxQuality(recipe.Value)}", ImGuiTreeNodeFlags.Leaf);
             }
         }
 
@@ -438,7 +451,7 @@ namespace Artisan.UI
                 if (details.Data == null)
                     continue;
 
-                using var n = ImRaii.TreeNode($"{i}: {item->ItemId} '{details.Data.Name}' ({item->Flags}): crs={details.Stats[0].Base}+{details.Stats[0].Melded}/{details.Stats[0].Max}, ctrl={details.Stats[1].Base}+{details.Stats[1].Melded}/{details.Stats[1].Max}, cp={details.Stats[2].Base}+{details.Stats[2].Melded}/{details.Stats[2].Max}");
+                using var n = ImRaii.TreeNode($"{i}: {item->ItemId} '{details.Data.Value.Name}' ({item->Flags}): crs={details.Stats[0].Base}+{details.Stats[0].Melded}/{details.Stats[0].Max}, ctrl={details.Stats[1].Base}+{details.Stats[1].Melded}/{details.Stats[1].Max}, cp={details.Stats[2].Base}+{details.Stats[2].Melded}/{details.Stats[2].Max}");
                 if (n)
                 {
                     for (int j = 0; j < 5; ++j)
@@ -470,7 +483,7 @@ namespace Artisan.UI
                     if (details.Data == null)
                         continue;
 
-                    using var n = ImRaii.TreeNode($"{i}: {item.ItemId} '{details.Data.Name}' ({item.Flags}): crs={details.Stats[0].Base}+{details.Stats[0].Melded}/{details.Stats[0].Max}, ctrl={details.Stats[1].Base}+{details.Stats[1].Melded}/{details.Stats[1].Max}, cp={details.Stats[2].Base}+{details.Stats[2].Melded}/{details.Stats[2].Max}");
+                    using var n = ImRaii.TreeNode($"{i}: {item.ItemId} '{details.Data.Value.Name}' ({item.Flags}): crs={details.Stats[0].Base}+{details.Stats[0].Melded}/{details.Stats[0].Max}, ctrl={details.Stats[1].Base}+{details.Stats[1].Melded}/{details.Stats[1].Max}, cp={details.Stats[2].Base}+{details.Stats[2].Melded}/{details.Stats[2].Max}");
                     if (n)
                     {
                         for (int j = 0; j < 5; ++j)

@@ -1,5 +1,5 @@
-﻿using Artisan.RawInformation.Character;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using Skills = Artisan.RawInformation.Character.Skills;
 
 namespace Artisan.CraftingLogic;
 

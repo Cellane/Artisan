@@ -3,7 +3,7 @@ using ECommons.DalamudServices;
 using ECommons.ExcelServices;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,7 +16,7 @@ namespace Artisan.RawInformation.Character
         {
             if (Svc.ClientState.LocalPlayer is null) return;
 
-            JobID = (Job)(Svc.ClientState.LocalPlayer?.ClassJob.Id ?? 0);
+            JobID = (Job)(Svc.ClientState.LocalPlayer?.ClassJob.Value.RowId ?? 0);
             CharacterLevel = Svc.ClientState.LocalPlayer?.Level;
             CurrentCP = Svc.ClientState.LocalPlayer.CurrentCp;
             MaxCP = Svc.ClientState.LocalPlayer.MaxCp;
@@ -36,7 +36,7 @@ namespace Artisan.RawInformation.Character
 
         public static unsafe int Control;
 
-        public static unsafe int JobLevel(Job job) => PlayerState.Instance()->ClassJobLevels[Svc.Data.GetExcelSheet<ClassJob>()?.GetRow((uint)job)?.ExpArrayIndex ?? 0];
+        public static unsafe int JobLevel(Job job) => PlayerState.Instance()->ClassJobLevels[Svc.Data.GetExcelSheet<ClassJob>()?.GetRow((uint)job).ExpArrayIndex ?? 0];
 
         internal static bool IsManipulationUnlocked(Job job) =>  job switch
         {
@@ -134,7 +134,7 @@ namespace Artisan.RawInformation.Character
         {
             if (Uncompletables.Any(x => x == recipe)) return true;
             if (!LuminaSheets.RecipeSheet.ContainsKey(recipe)) return false;
-            if (LuminaSheets.RecipeSheet[recipe].SecretRecipeBook.Row > 0) return true;
+            if (LuminaSheets.RecipeSheet[recipe].SecretRecipeBook.RowId > 0) return true;
 
             return GetIsGatheringItemGathered(recipe) != 0;
         }

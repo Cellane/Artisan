@@ -11,7 +11,7 @@ using ECommons.Reflection;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using ImGuiNET;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using OtterGui;
 using OtterGui.Raii;
 using OtterGui.Table;
@@ -138,7 +138,7 @@ namespace Artisan.UI.Tables
 
             public override string ToName(Ingredient item)
             {
-                return item.Data.Name.RawString;
+                return item.Data.Name.ToString();
             }
 
             public bool ShowColour = false;
@@ -179,12 +179,12 @@ namespace Artisan.UI.Tables
                 ImGuiUtil.HoverIcon(item.Icon, Interface.LineIconSize);
                 ImGui.SameLine();
 
-                var selected = ImGui.Selectable(item.Data.Name.RawString);
+                var selected = ImGui.Selectable($"{item.Data.Name.ToString()}");
                 InvokeContextMenu(item);
 
                 if (selected)
                 {
-                    Clipboard.SetText(item.Data.Name.RawString);
+                    Clipboard.SetText(item.Data.Name.ToString());
                     Notify.Success("Name copied to clipboard");
                 }
 
@@ -194,7 +194,7 @@ namespace Artisan.UI.Tables
                     foreach (var usedin in item.UsedInCrafts)
                     {
                         var recipe = LuminaSheets.RecipeSheet[usedin];
-                        var amountUsed = recipe.UnkData5.FirstOrDefault(x => x.ItemIngredient == item.Data.RowId).AmountIngredient * item.OriginList.Recipes.First(x => x.ID == recipe.RowId).Quantity;
+                        var amountUsed = recipe.Ingredients().FirstOrDefault(x => x.Item.RowId == item.Data.RowId).Amount * item.OriginList.Recipes.First(x => x.ID == recipe.RowId).Quantity;
 
                         sb.Append($"{usedin.NameOfRecipe()} - {amountUsed}\r\n");
                     }
@@ -476,11 +476,11 @@ namespace Artisan.UI.Tables
                 => _gatherItemLocationColumWidth;
 
             public override int Compare(Ingredient lhs, Ingredient rhs)
-                => lhs.GatherZone.PlaceName.Value.Name.RawString.CompareTo(rhs.GatherZone.PlaceName.Value.Name.RawString);
+                => lhs.GatherZone.PlaceName.Value.Name.ToString().CompareTo(rhs.GatherZone.PlaceName.Value.Name.ToString());
 
             public override void DrawColumn(Ingredient item, int idx)
             {
-                ImGui.Text(item.GatherZone.PlaceName.Value.Name.RawString);
+                ImGui.Text(item.GatherZone.PlaceName.Value.Name.ToString());
             }
 
             public override bool FilterFunc(Ingredient item)
@@ -519,7 +519,7 @@ namespace Artisan.UI.Tables
 
             public override void DrawColumn(Ingredient item, int idx)
             {
-                ImGui.Text(Svc.Data.Excel.GetSheet<ItemSearchCategory>().GetRow(item.Category).Name.RawString);
+                ImGui.Text(Svc.Data.Excel.GetSheet<ItemSearchCategory>().GetRow(item.Category).Name.ToString());
             }
 
             public override bool FilterFunc(Ingredient item)
@@ -600,8 +600,8 @@ namespace Artisan.UI.Tables
                     {
                         foreach (var i in item.UsedInMaterialsListCount.Where(x => x.Value > 0))
                         {
-                            var owned = RetainerInfo.GetRetainerItemCount(LuminaSheets.RecipeSheet[i.Key].ItemResult.Row) + CraftingListUI.NumberOfIngredient(LuminaSheets.RecipeSheet[i.Key].ItemResult.Row);
-                            if (SourceList.FindFirst(x => x.CraftedRecipe?.RowId == i.Key, out var ingredient))
+                            var owned = RetainerInfo.GetRetainerItemCount(LuminaSheets.RecipeSheet[i.Key].ItemResult.RowId) + CraftingListUI.NumberOfIngredient(LuminaSheets.RecipeSheet[i.Key].ItemResult.RowId);
+                            if (SourceList.FindFirst(x => x.CraftedRecipe.RowId == i.Key, out var ingredient))
                             {
                                 sb.AppendLine($"{i.Value} less is required due to having {(owned > ingredient.Required ? "at least " : "")}{Math.Min(ingredient.Required, owned)}x {i.Key.NameOfRecipe()}");
                             }
@@ -612,11 +612,14 @@ namespace Artisan.UI.Tables
                     {
                         foreach (var i in item.SubSubMaterials)
                         {
+                            if (item.UsedInMaterialsListCount.ContainsKey(i.Key))
+                                continue;
+
                             sb.AppendLine($"{i.Value.Sum(x => x.Item2)} less is required for {i.Key.NameOfRecipe()}");
                             foreach (var m in i.Value)
                             {
-                                var owned = RetainerInfo.GetRetainerItemCount(LuminaSheets.RecipeSheet[m.Item1].ItemResult.Row) + CraftingListUI.NumberOfIngredient(LuminaSheets.RecipeSheet[m.Item1].ItemResult.Row);
-                                if (SourceList.FindFirst(x => x.CraftedRecipe?.RowId == m.Item1, out var ingredient))
+                                var owned = RetainerInfo.GetRetainerItemCount(LuminaSheets.RecipeSheet[m.Item1].ItemResult.RowId) + CraftingListUI.NumberOfIngredient(LuminaSheets.RecipeSheet[m.Item1].ItemResult.RowId);
+                                if (SourceList.FindFirst(x => x.CraftedRecipe.RowId == m.Item1, out var ingredient))
                                 {
                                     sb.AppendLine($"└ {m.Item1.NameOfRecipe()} uses {i.Key.NameOfRecipe()}, you have {(owned > ingredient.Required ? "at least " : "")}{Math.Min(ingredient.Required, owned)} {m.Item1.NameOfRecipe()} so {m.Item2}x {item.Data.Name} less is required as a result.");
                                 }
@@ -754,7 +757,7 @@ namespace Artisan.UI.Tables
             {
                 if (isOnList == null)
                 {
-                    isOnList = item.OriginList.Recipes.Any(x => LuminaSheets.RecipeSheet.Values.Any(y => y.ItemResult.Row == item.Data.RowId && y.RowId == x.ID));
+                    isOnList = item.OriginList.Recipes.Any(x => LuminaSheets.RecipeSheet.Values.Any(y => y.ItemResult.RowId == item.Data.RowId && y.RowId == x.ID));
                 }
 
                 if (item.Sources.Contains(1) && isOnList.Value)
@@ -765,9 +768,9 @@ namespace Artisan.UI.Tables
                         var idx = 0;
                         FilteredItems.Add((item, idx));
                         idx++;
-                        foreach (var ingredient in CraftingListHelpers.GetIngredientRecipe(item.Data.RowId).UnkData5.Where(x => x.AmountIngredient > 0))
+                        foreach (var ingredient in CraftingListHelpers.GetIngredientRecipe(item.Data.RowId).Value.Ingredients().Where(x => x.Amount > 0))
                         {
-                            if (Items.FindFirst(x => x.Data.RowId == ingredient.ItemIngredient, out var result))
+                            if (Items.FindFirst(x => x.Data.RowId == ingredient.Item.RowId, out var result))
                                 FilteredItems.Add((result, idx));
                             idx++;
                         }
@@ -800,7 +803,7 @@ namespace Artisan.UI.Tables
 
                 try
                 {
-                    Chat.Instance.SendMessage($"/mloot {item.Data.Name.RawString}");
+                    Chat.Instance.SendMessage($"/mloot {item.Data.Name.ToString()}");
                 }
                 catch (Exception e)
                 {
@@ -872,10 +875,10 @@ namespace Artisan.UI.Tables
 
                 try
                 {
-                    if (LuminaSheets.GatheringItemSheet!.Any(x => x.Value.Item == item.Data.RowId))
-                        Chat.Instance.SendMessage($"/gather {item.Data.Name.RawString}");
+                    if (LuminaSheets.GatheringItemSheet!.Any(x => x.Value.Item.RowId == item.Data.RowId))
+                        Chat.Instance.SendMessage($"/gather {item.Data.Name.ToString()}");
                     else
-                        Chat.Instance.SendMessage($"/gatherfish {item.Data.Name.RawString}");
+                        Chat.Instance.SendMessage($"/gatherfish {item.Data.Name.ToString()}");
                 }
                 catch (Exception e)
                 {

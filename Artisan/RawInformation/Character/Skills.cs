@@ -8,6 +8,7 @@ namespace Artisan.RawInformation.Character
     public enum Skills
     {
         None = 0,
+        TouchCombo = 1,
 
         BasicSynthesis = 100001, // 120p progress, 10dur cost
         CarefulSynthesis = 100203, // 180p progress, 7cp + 10 dur cost
@@ -58,13 +59,13 @@ namespace Artisan.RawInformation.Character
         public static Skills ActionToSkill(uint actionId) => _actionToSkill.GetValueOrDefault(actionId);
 
         public static int Level(this Skills skill) => skill.ActionId(Job.CRP) >= 100000 ? LuminaSheets.CraftActions[skill.ActionId(Job.CRP)].ClassJobLevel : LuminaSheets.ActionSheet[skill.ActionId(Job.CRP)].ClassJobLevel;
-        public static uint ActionId(this Skills skill, Job job) => job is >= Job.CRP and <= Job.CUL ? _skillToAction[Array.IndexOf(Enum.GetValues(typeof(Skills)), skill), job - Job.CRP] : 0;
+        public static uint ActionId(this Skills skill, Job job) => job is >= Job.CRP and <= Job.CUL ? _skillToAction[Math.Max(Array.IndexOf(Enum.GetValues(typeof(Skills)), skill), (int)Skills.None), job - Job.CRP] : 0;
 
         static SkillActionMap()
         {
             foreach (Skills skill in (Skills[])Enum.GetValues(typeof(Skills)))
             {
-                if (skill == Skills.None) continue;
+                if (skill == Skills.None || skill == Skills.TouchCombo) continue;
                 AssignActionIDs(skill);
             }
         }
@@ -72,12 +73,12 @@ namespace Artisan.RawInformation.Character
         private static void AssignActionIDs(Skills skill)
         {
             var id = (uint)skill;
-            var skillName = id >= 100000 ? LuminaSheets.CraftActions[id].Name.RawString.Trim() : LuminaSheets.ActionSheet[id].Name.RawString;
+            var skillName = id >= 100000 ? LuminaSheets.CraftActions[id].Name.ToString().Trim() : LuminaSheets.ActionSheet[id].Name.ToString();
 
             for (Job i = Job.CRP; i <= Job.CUL; i++)
             {
                 var enumIndex = Array.IndexOf(Enum.GetValues(typeof(Skills)), skill);
-                var convertedId = id >= 100000 ? LuminaSheets.CraftActions.Values.FirstOrDefault(x => x.ClassJobCategory.Row == (int)i + 1 && x.Name.RawString == skillName).RowId : LuminaSheets.ActionSheet.Values.FirstOrDefault(x => x.ClassJob.Row == (int)i && x.Name.RawString == skillName).RowId;
+                var convertedId = id >= 100000 ? LuminaSheets.CraftActions.Values.FirstOrDefault(x => x.ClassJobCategory.RowId == (int)i + 1 && x.Name.ToString() == skillName).RowId : LuminaSheets.ActionSheet.Values.FirstOrDefault(x => x.ClassJob.RowId == (int)i && x.Name.ToString() == skillName).RowId;
                 ref var entry = ref _skillToAction[enumIndex, i - Job.CRP];
                 if (entry != 0)
                     throw new Exception($"Duplicate entry for {i} {skill}: {id} and {entry}");

@@ -14,7 +14,7 @@ using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using Lumina.Excel.GeneratedSheets;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -74,7 +74,7 @@ namespace Artisan.IPC
             }
         }
 
-        private static uint firstFoundQuantity = 0;
+        private static int firstFoundQuantity = 0;
 
         public static bool CacheBuilt = ATools ? false : true;
         public static CancellationTokenSource CTSource = new();
@@ -89,7 +89,7 @@ namespace Artisan.IPC
             SetupIPC(true);
         }
 
-        private static void LogoutCacheClear()
+        private static void LogoutCacheClear(int t, int c)
         {
             RetainerData.Clear();
         }

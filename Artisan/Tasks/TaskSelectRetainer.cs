@@ -14,7 +14,6 @@ using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using SharpDX.Direct2D1.Effects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,7 +22,6 @@ using System.Runtime.InteropServices;
 using static ECommons.GenericHelpers;
 using MemoryHelper = Dalamud.Memory.MemoryHelper;
 using ECommons.Automation.UIInput;
-using Artisan.Autocraft;
 
 
 namespace Artisan.Tasks;
@@ -222,18 +220,18 @@ internal unsafe static class RetainerHandlers
 {
     internal static bool? SelectQuit()
     {
-        var text = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.Addon>().GetRow(2383).Text.ToDalamudString().ExtractText();
+        var text = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRow(2383).Text.ToDalamudString().ExtractText();
         return TrySelectSpecificEntry(text);
     }
 
     internal static bool? SelectEntrustItems()
     {
         //2378	Entrust or withdraw items.
-        var text = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.Addon>().GetRow(2378).Text.ToDalamudString().ExtractText(true);
+        var text = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRow(2378).Text.ToDalamudString().ExtractText(true);
         return TrySelectSpecificEntry(text);
     }
 
-    internal static bool? OpenItemContextMenu(uint ItemId, bool lookingForHQ, out uint quantity)
+    internal static bool? OpenItemContextMenu(uint ItemId, bool lookingForHQ, out int quantity)
     {
         quantity = 0;
         var inventories = new List<InventoryType>
@@ -314,7 +312,7 @@ internal unsafe static class RetainerHandlers
     internal static bool? ClickCloseEntrustWindow()
     {
         //13530	Close Window
-        var text = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.Addon>().GetRow(13530).Text.ToDalamudString().ExtractText();
+        var text = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Addon>().GetRow(13530).Text.ToDalamudString().ExtractText();
         if (TryGetAddonByName<AtkUnitBase>("RetainerItemTransferProgress", out var addon) && IsAddonReady(addon))
         {
             var button = (AtkComponentButton*)addon->UldManager.NodeList[2]->GetComponent();

@@ -5,9 +5,13 @@ using ECommons.DalamudServices;
 using ECommons.ExcelServices;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI.Misc;
-using Lumina.Excel.GeneratedSheets;
 using System;
 using System.Runtime.CompilerServices;
+using Lumina.Excel.Sheets;
+using Artisan.RawInformation;
+using Lumina.Excel;
+using SharpDX.Direct2D1;
+using System.Linq;
 
 namespace Artisan.GameInterop;
 
@@ -21,13 +25,13 @@ public unsafe static class CharacterStatsUtils
     private static int[,] GetStatCapModifiers()
     {
         var res = new int[23, (int)Stat.Count];
-        var sheet = Svc.Data.GetExcelSheet<BaseParam>()!;
+        var sheet = Svc.Data.GetExcelSheet<RawRow>(name: "BaseParam")!;
         for (var stat = Stat.Craftsmanship; stat < Stat.Count; ++stat)
         {
-            var row = sheet.GetRowParser(ParamIds[(int)stat])!;
+            var row = sheet.GetRow(ParamIds[(int)stat])!;
             for (int i = 1; i < 23; ++i)
             {
-                res[i, (int)stat] = row.ReadColumn<ushort>(i + 3);
+                res[i, (int)stat] = row.ReadInt32Column(i + 3);
             }
         }
         return res;
@@ -59,28 +63,28 @@ public unsafe struct ItemStats
         if (Data == null)
             return;
 
-        foreach (var p in Data.UnkData59)
+        foreach (var p in Data.Value.BaseParams())
         {
-            if (Array.IndexOf(CharacterStatsUtils.ParamIds, p.BaseParam) is var stat && stat >= 0)
+            if (Array.IndexOf(CharacterStatsUtils.ParamIds, p.BaseParam.RowId) is var stat && stat >= 0)
             {
                 Stats[stat].Base += p.BaseParamValue;
             }
         }
         if (hq)
         {
-            foreach (var p in Data.UnkData73)
+            foreach (var p in Data.Value.BaseParamSpecials())
             {
-                if (Array.IndexOf(CharacterStatsUtils.ParamIds, p.BaseParamSpecial) is var stat && stat >= 0)
+                if (Array.IndexOf(CharacterStatsUtils.ParamIds, p.BaseParamSpecial.RowId) is var stat && stat >= 0)
                 {
                     Stats[stat].Base += p.BaseParamValueSpecial;
                 }
             }
         }
 
-        var ilvl = Data.LevelItem.Value;
-        Stats[0].Max = Math.Max(Stats[0].Base, (int)(0.5 + 0.001 * CharacterStatsUtils.StatCapModifiers[Data.EquipSlotCategory.Row, 0] * ilvl.Craftsmanship));
-        Stats[1].Max = Math.Max(Stats[1].Base, (int)(0.5 + 0.001 * CharacterStatsUtils.StatCapModifiers[Data.EquipSlotCategory.Row, 1] * ilvl.Control));
-        Stats[2].Max = Math.Max(Stats[2].Base, (int)(0.5 + 0.001 * CharacterStatsUtils.StatCapModifiers[Data.EquipSlotCategory.Row, 2] * ilvl.CP));
+        var ilvl = Data.Value.LevelItem.Value;
+        Stats[0].Max = Math.Max(Stats[0].Base, (int)(0.5 + 0.001 * CharacterStatsUtils.StatCapModifiers[Data.Value.EquipSlotCategory.RowId, 0] * ilvl.Craftsmanship));
+        Stats[1].Max = Math.Max(Stats[1].Base, (int)(0.5 + 0.001 * CharacterStatsUtils.StatCapModifiers[Data.Value.EquipSlotCategory.RowId, 1] * ilvl.Control));
+        Stats[2].Max = Math.Max(Stats[2].Base, (int)(0.5 + 0.001 * CharacterStatsUtils.StatCapModifiers[Data.Value.EquipSlotCategory.RowId, 2] * ilvl.CP));
 
         var sheetMat = Svc.Data.GetExcelSheet<Materia>();
         for (int i = 0; i < 5; ++i)
@@ -92,9 +96,9 @@ public unsafe struct ItemStats
             if (materiaRow == null)
                 continue;
 
-            var stat = Array.IndexOf(CharacterStatsUtils.ParamIds, materiaRow.BaseParam.Row);
+            var stat = Array.IndexOf(CharacterStatsUtils.ParamIds, materiaRow.Value.BaseParam.RowId);
             if (stat >= 0)
-                Stats[stat].Melded += materiaRow.Value[materiaGrades[i]];
+                Stats[stat].Melded += materiaRow.Value.Value[materiaGrades[i]];
         }
     }
     public ItemStats(InventoryItem* item) : this(item->ItemId, item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality), item->Materia, item->MateriaGrades) { }
@@ -128,21 +132,23 @@ public unsafe struct ConsumableStats
         if (Data == null)
             return;
 
-        var food = ConsumableChecker.GetItemConsumableProperties(Data, hq);
+        var food = ConsumableChecker.GetItemConsumableProperties(Data.Value, hq);
         if (food == null)
             return;
 
-        foreach (var p in food.UnkData1)
+        int i = 0;
+        foreach (var p in food.Value.Params)
         {
-            var stat = Array.IndexOf(CharacterStatsUtils.ParamIds, p.BaseParam);
+            var stat = Array.IndexOf(CharacterStatsUtils.ParamIds, p.BaseParam.RowId);
             if (stat >= 0)
             {
                 var val = hq ? p.ValueHQ : p.Value;
                 var max = hq ? p.MaxHQ : p.Max;
                 Stats[stat].Percent = p.IsRelative ? val : 0;
                 Stats[stat].Max = p.IsRelative ? max : val;
-                Stats[stat].Param = p.BaseParam;
+                Stats[stat].Param = (int)p.BaseParam.RowId;
             }
+            i++;
         }
     }
 }
@@ -209,7 +215,9 @@ public unsafe struct CharacterStats
         {
             var details = new ItemStats((RaptureGearsetModule.GearsetItem*)Unsafe.AsPointer(ref gs.Items[i]));
             if (details.Data != null)
+            {
                 res.AddItem(i, ref details);
+            }
         }
         res.Manipulation = CharacterInfo.IsManipulationUnlocked((Job)gs.ClassJob);
         return res;
@@ -240,7 +248,7 @@ public unsafe struct CharacterStats
         Craftsmanship += item.Stats[(int)CharacterStatsUtils.Stat.Craftsmanship].Effective;
         Control += item.Stats[(int)CharacterStatsUtils.Stat.Control].Effective;
         CP += item.Stats[(int)CharacterStatsUtils.Stat.CP].Effective;
-        Splendorous |= slot == 0 && item.Data.LevelEquip == 90 && item.Data.Rarity >= 4;
+        Splendorous |= slot == 0 && item.Data.Value.LevelEquip == 90 && item.Data.Value.Rarity >= 4;
         Specialist |= slot == 13; // specialist == job crystal equipped
     }
 

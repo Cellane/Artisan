@@ -6,11 +6,14 @@ using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Hooking;
 using ECommons.DalamudServices;
 using ECommons.ExcelServices;
+using FFXIVClientStructs;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Lumina.Excel.Sheets;
 using OtterGui;
 using System;
 using System.Linq;
+using Condition = Artisan.CraftingLogic.CraftData.Condition;
 
 namespace Artisan.GameInterop;
 
@@ -33,7 +36,7 @@ public static unsafe class Crafting
     public static State CurState { get; private set; } = State.InvalidState;
     public static event Action<State>? StateChanged;
 
-    public static Lumina.Excel.GeneratedSheets.Recipe? CurRecipe { get; private set; }
+    public static Recipe? CurRecipe { get; private set; }
     public static CraftState? CurCraft { get; private set; }
     public static StepState? CurStep { get; private set; }
     public static bool IsTrial { get; private set; }
@@ -43,15 +46,15 @@ public static unsafe class Crafting
     public static (int Cur, int Max) QuickSynthState { get; private set; }
     public static bool QuickSynthCompleted => QuickSynthState.Cur == QuickSynthState.Max && QuickSynthState.Max > 0;
 
-    public delegate void CraftStartedDelegate(Lumina.Excel.GeneratedSheets.Recipe recipe, CraftState craft, StepState initialStep, bool trial);
+    public delegate void CraftStartedDelegate(Recipe recipe, CraftState craft, StepState initialStep, bool trial);
     public static event CraftStartedDelegate? CraftStarted;
 
     // note: step index increases for most actions (except final appraisal / careful observation / heart&soul)
-    public delegate void CraftAdvancedDelegate(Lumina.Excel.GeneratedSheets.Recipe recipe, CraftState craft, StepState step);
+    public delegate void CraftAdvancedDelegate(Recipe recipe, CraftState craft, StepState step);
     public static event CraftAdvancedDelegate? CraftAdvanced;
 
     // note: final action that completes/fails a craft does not advance step index
-    public delegate void CraftFinishedDelegate(Lumina.Excel.GeneratedSheets.Recipe recipe, CraftState craft, StepState finalStep, bool cancelled);
+    public delegate void CraftFinishedDelegate(Recipe recipe, CraftState craft, StepState finalStep, bool cancelled);
     public static event CraftFinishedDelegate? CraftFinished;
 
     public delegate void QuickSynthProgressDelegate(int cur, int max);
@@ -75,7 +78,7 @@ public static unsafe class Crafting
     }
 
     // note: this uses current character stats & equipped gear
-    public static CraftState BuildCraftStateForRecipe(CharacterStats stats, Job job, Lumina.Excel.GeneratedSheets.Recipe recipe)
+    public static CraftState BuildCraftStateForRecipe(CharacterStats stats, Job job, Recipe recipe)
     {
         var lt = recipe.RecipeLevelTable.Value;
         var res = new CraftState()
@@ -84,52 +87,52 @@ public static unsafe class Crafting
             StatControl = stats.Control,
             StatCP = stats.CP,
             StatLevel = stats.Level == default ? CharacterInfo.JobLevel(job) : stats.Level,
-            UnlockedManipulation = CharacterInfo.IsManipulationUnlocked(job),
+            UnlockedManipulation = stats.Manipulation,
             Specialist = stats.Specialist,
             Splendorous = stats.Splendorous,
-            CraftCollectible = recipe.ItemResult.Value?.IsCollectable ?? false,
+            CraftCollectible = recipe.ItemResult.Value.AlwaysCollectable,
             CraftExpert = recipe.IsExpert,
-            CraftLevel = lt?.ClassJobLevel ?? 0,
+            CraftLevel = lt.ClassJobLevel,
             CraftDurability = Calculations.RecipeDurability(recipe),
             CraftProgress = Calculations.RecipeDifficulty(recipe),
-            CraftProgressDivider = lt?.ProgressDivider ?? 180,
-            CraftProgressModifier = lt?.ProgressModifier ?? 100,
-            CraftQualityDivider = lt?.QualityDivider ?? 180,
-            CraftQualityModifier = lt?.QualityModifier ?? 180,
+            CraftProgressDivider = lt.ProgressDivider,
+            CraftProgressModifier = lt.ProgressModifier,
+            CraftQualityDivider = lt.QualityDivider,
+            CraftQualityModifier = lt.QualityModifier,
             CraftQualityMax = Calculations.RecipeMaxQuality(recipe),
             CraftRequiredQuality = (int)recipe.RequiredQuality,
-            CraftRecommendedCraftsmanship = lt?.SuggestedCraftsmanship ?? 0,
+            CraftRecommendedCraftsmanship = lt.SuggestedCraftsmanship,
             CraftHQ = recipe.CanHq,
         };
-        
+
         if (res.CraftCollectible)
         {
             // Check regular collectibles first
-            var breakpoints = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.CollectablesShopItem>()?.FirstOrDefault(x => x.Item.Row == recipe.ItemResult.Row)?.CollectablesShopRefine.Value;
+            var breakpoints = Svc.Data.Excel.GetSubrowSheet<CollectablesShopItem>()?.SelectMany(x => x).FirstOrDefault(x => x.Item.RowId == recipe.ItemResult.RowId).CollectablesShopRefine.Value;
             if (breakpoints != null)
             {
-                res.CraftQualityMin1 = breakpoints.LowCollectability * 10;
-                res.CraftQualityMin2 = breakpoints.MidCollectability * 10;
-                res.CraftQualityMin3 = breakpoints.HighCollectability * 10;
+                res.CraftQualityMin1 = breakpoints.Value.LowCollectability * 10;
+                res.CraftQualityMin2 = breakpoints.Value.MidCollectability * 10;
+                res.CraftQualityMin3 = breakpoints.Value.HighCollectability * 10;
             }
             else // Then check custom delivery
             {
-                var satisfaction = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.SatisfactionSupply>()?.FirstOrDefault(x => x.Item.Row == recipe.ItemResult.Row);
+                var satisfaction = Svc.Data.GetSubrowExcelSheet<SatisfactionSupply>()?.SelectMany(x => x).FirstOrDefault(x => x.Item.RowId == recipe.ItemResult.RowId);
                 if (satisfaction != null)
                 {
-                    res.CraftQualityMin1 = satisfaction.CollectabilityLow * 10;
-                    res.CraftQualityMin2 = satisfaction.CollectabilityMid * 10;
-                    res.CraftQualityMin3 = satisfaction.CollectabilityHigh * 10;
+                    res.CraftQualityMin1 = satisfaction.Value.CollectabilityLow * 10;
+                    res.CraftQualityMin2 = satisfaction.Value.CollectabilityMid * 10;
+                    res.CraftQualityMin3 = satisfaction.Value.CollectabilityHigh * 10;
                 }
                 else // Finally, check Ishgard Restoration
                 {
-                    var hwdSheet = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.HWDCrafterSupply>()?.FirstOrDefault(x => x.ItemTradeIn.Any(y => y.Row == recipe.ItemResult.Row));
+                    var hwdSheet = Svc.Data.GetExcelSheet<HWDCrafterSupply>()?.FirstOrDefault(x => x.HWDCrafterSupplyParams.Any(y => y.ItemTradeIn.RowId == recipe.ItemResult.RowId));
                     if (hwdSheet != null)
                     {
-                        var index = hwdSheet.ItemTradeIn.IndexOf(x => x.Row == recipe.ItemResult.Row);
-                        res.CraftQualityMin1 = hwdSheet.BaseCollectableRating[index] * 10;
-                        res.CraftQualityMin2 = hwdSheet.MidCollectableRating[index] * 10;
-                        res.CraftQualityMin3 = hwdSheet.HighCollectableRating[index] * 10;
+                        var index = hwdSheet.Value.HWDCrafterSupplyParams.IndexOf(x => x.ItemTradeIn.RowId == recipe.ItemResult.RowId);
+                        res.CraftQualityMin1 = hwdSheet.Value.HWDCrafterSupplyParams[index].BaseCollectableRating * 10;
+                        res.CraftQualityMin2 = hwdSheet.Value.HWDCrafterSupplyParams[index].MidCollectableRating * 10;
+                        res.CraftQualityMin3 = hwdSheet.Value.HWDCrafterSupplyParams[index].HighCollectableRating * 10;
                         res.IshgardExpert = res.CraftExpert;
                     }
                 }
@@ -208,7 +211,7 @@ public static unsafe class Crafting
         // wrap up
         if (CurRecipe != null && CurCraft != null && CurStep != null)
         {
-            CraftFinished?.Invoke(CurRecipe, CurCraft, CurStep, true); // emulate cancel (TODO reconsider)
+            CraftFinished?.Invoke(CurRecipe.Value, CurCraft, CurStep, true); // emulate cancel (TODO reconsider)
             return State.WaitFinish;
         }
 
@@ -274,14 +277,14 @@ public static unsafe class Crafting
         if (CurRecipe == null)
             return State.InvalidState; // failed to find recipe, bail out...
 
-        var canHQ = CurRecipe.CanHq;
-        CurCraft = BuildCraftStateForRecipe(CharacterStats.GetCurrentStats(), CharacterInfo.JobID, CurRecipe);
-        CurStep = BuildStepState(synthWindow, Skills.None, false);
+        var canHQ = CurRecipe.Value.CanHq;
+        CurCraft = BuildCraftStateForRecipe(CharacterStats.GetCurrentStats(), CharacterInfo.JobID, CurRecipe.Value);
+        CurStep = BuildStepState(synthWindow, null, CurCraft);
         if (CurStep.Index != 1 || CurStep.Condition != Condition.Normal || CurStep.PrevComboAction != Skills.None)
             Svc.Log.Error($"Unexpected initial state: {CurStep}");
 
         IsTrial = synthWindow->AtkUnitBase.AtkValues[1] is { Type: FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Bool, Byte: 1 };
-        CraftStarted?.Invoke(CurRecipe, CurCraft, CurStep, IsTrial);
+        CraftStarted?.Invoke(CurRecipe.Value, CurCraft, CurStep, IsTrial);
         return State.InProgress;
     }
 
@@ -300,7 +303,7 @@ public static unsafe class Crafting
         if (synthWindow == null)
         {
             // craft was aborted
-            CraftFinished?.Invoke(CurRecipe!, CurCraft!, CurStep!, true);
+            CraftFinished?.Invoke(CurRecipe.Value, CurCraft!, CurStep!, true);
             return State.WaitFinish;
         }
 
@@ -310,16 +313,16 @@ public static unsafe class Crafting
         if (_predictedNextStep.Progress >= CurCraft!.CraftProgress || _predictedNextStep.Durability <= 0)
         {
             // craft was finished, we won't get any status updates, so just wrap up
-            CurStep = BuildStepState(synthWindow, _predictedNextStep.PrevComboAction, _predictedNextStep.PrevActionFailed);
+            CurStep = BuildStepState(synthWindow, _predictedNextStep, CurCraft);
             _predictedNextStep = null;
             _predictionDeadline = default;
-            CraftFinished?.Invoke(CurRecipe!, CurCraft, CurStep, false);
+            CraftFinished?.Invoke(CurRecipe.Value!, CurCraft, CurStep, false);
             return State.WaitFinish;
         }
         else
         {
             // action was executed, but we might not have correct statuses yet
-            var step = BuildStepState(synthWindow, _predictedNextStep.PrevComboAction, _predictedNextStep.PrevActionFailed);
+            var step = BuildStepState(synthWindow, _predictedNextStep, CurCraft);
             if (step != _predictedNextStep)
             {
                 if (DateTime.Now <= _predictionDeadline)
@@ -332,12 +335,12 @@ public static unsafe class Crafting
                     $"     had {CurStep}\n" +
                     $"expected {_predictedNextStep}\n" +
                     $"     got {step}\n" +
-                    $"   stats Craft:{CharacterInfo.Craftsmanship}, Control:{CharacterInfo.Control}, CP:{CharacterInfo.CurrentCP}/{CharacterInfo.MaxCP}, crafting #{CurRecipe?.RowId} '{CurRecipe?.ItemResult.Value?.Name}'");
+                    $"   stats Craft:{CharacterInfo.Craftsmanship}, Control:{CharacterInfo.Control}, CP:{CharacterInfo.CurrentCP}/{CharacterInfo.MaxCP}, crafting #{CurRecipe?.RowId} '{CurRecipe?.ItemResult.Value.Name}'");
             }
             CurStep = step;
             _predictedNextStep = null;
             _predictionDeadline = default;
-            CraftAdvanced?.Invoke(CurRecipe!, CurCraft, CurStep);
+            CraftAdvanced?.Invoke(CurRecipe.Value, CurCraft, CurStep);
             return State.InProgress;
         }
     }
@@ -430,7 +433,7 @@ public static unsafe class Crafting
     private static int GetStepDurability(AddonSynthesis* synthWindow) => synthWindow->AtkUnitBase.AtkValues[7].Int;
     private static Condition GetStepCondition(AddonSynthesis* synthWindow) => (Condition)synthWindow->AtkUnitBase.AtkValues[12].Int;
 
-    private static StepState BuildStepState(AddonSynthesis* synthWindow, Skills prevAction, bool prevActionFailed) => new ()
+    private static StepState BuildStepState(AddonSynthesis* synthWindow, StepState? predictedStep, CraftState craft) => new ()
     {
         Index = GetStepIndex(synthWindow),
         Progress = GetStepProgress(synthWindow),
@@ -449,12 +452,13 @@ public static unsafe class Crafting
         CarefulObservationLeft = ActionManagerEx.CanUseSkill(Skills.CarefulObservation) ? 1 : 0,
         HeartAndSoulActive = GetStatus(Buffs.HeartAndSoul) != null,
         HeartAndSoulAvailable = ActionManagerEx.CanUseSkill(Skills.HeartAndSoul),
-        QuickInnoAvailable = ActionManagerEx.CanUseSkill(Skills.QuickInnovation),
         TrainedPerfectionActive = GetStatus(Buffs.TrainedPerfection) != null,
         TrainedPerfectionAvailable = ActionManagerEx.CanUseSkill(Skills.TrainedPerfection),
+        QuickInnoAvailable = ActionManagerEx.CanUseSkill(Skills.QuickInnovation),
+        QuickInnoLeft = !craft.Specialist ? 0 : ActionManagerEx.CanUseSkill(Skills.QuickInnovation ) ? 1 : predictedStep?.QuickInnoLeft ?? 0,
         ExpedienceLeft = GetStatus(Buffs.Expedience)?.StackCount ?? 0,
-        PrevActionFailed = prevActionFailed,
-        PrevComboAction = prevAction,
+        PrevActionFailed = predictedStep?.PrevActionFailed ?? false,
+        PrevComboAction = predictedStep?.PrevComboAction ?? Skills.None,
     };
 
     private static Dalamud.Game.ClientState.Statuses.Status? GetStatus(uint statusID) => Svc.ClientState.LocalPlayer?.StatusList.FirstOrDefault(s => s.StatusId == statusID);
@@ -480,7 +484,7 @@ public static unsafe class Crafting
                 Svc.Log.Debug($"Starting craft: recipe #{startPayload->RecipeId}, initial quality {startPayload->StartingQuality}, u8={startPayload->u8}");
                 if (CurRecipe != null)
                     Svc.Log.Error($"Unexpected non-null recipe when receiving {*payload} message");
-                CurRecipe = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.Recipe>()?.GetRow(startPayload->RecipeId);
+                CurRecipe = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Recipe>()?.GetRow(startPayload->RecipeId);
                 if (CurRecipe == null)
                     Svc.Log.Error($"Failed to find recipe #{startPayload->RecipeId}");
                 // note: we could build CurCraft and CurStep here
@@ -567,7 +571,7 @@ public static unsafe class Crafting
                 Svc.Log.Debug($"Starting quicksynth: recipe #{quickSynthPayload->RecipeId}, count {quickSynthPayload->MaxCount}");
                 if (CurRecipe != null)
                     Svc.Log.Error($"Unexpected non-null recipe when receiving {*payload} message");
-                CurRecipe = Svc.Data.GetExcelSheet<Lumina.Excel.GeneratedSheets.Recipe>()?.GetRow(quickSynthPayload->RecipeId);
+                CurRecipe = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Recipe>()?.GetRow(quickSynthPayload->RecipeId);
                 if (CurRecipe == null)
                     Svc.Log.Error($"Failed to find recipe #{quickSynthPayload->RecipeId}");
                 break;
